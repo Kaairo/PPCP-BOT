@@ -17,7 +17,7 @@ API_URL   = 'https://ppcp.rudochk.com/check'
 MAX_FILE  = 500
 
 bot = telebot.TeleBot(BOT_TOKEN, num_threads=10)
-USERS_FILE  = 'ppcp_users.json'
+USERS_FILE  = 'yoshppcp_users.json'
 active_jobs = {}
 
 EMOJIS = {
@@ -356,51 +356,60 @@ def handle_file(msg):
         charged  = []
         ccn_list = []
 
-        with ThreadPoolExecutor(max_workers=10) as ex:
-            futures = {ex.submit(check_card, card): card for card in cards}
-            for i, future in enumerate(as_completed(futures), 1):
-                if stop_flag.get('stop'):
-                    break
-                try:
-                    res = future.result()
-                except Exception as err:
-                    card = futures[future]
-                    res  = {'status':'DEAD','card':card,'message':str(err)[:50],'price':''}
-                results.append(res)
-                if 'CHARGED' in res['status']:
-                    charged.append(res)
-                    # Send hit immediately
-                    ci = get_card_info(res['card'].split('|')[0])
-                    send_safe(msg.chat.id,
-                        fmt_result(res, ci, msg.from_user.username or 'User'),
-                        parse_mode='HTML')
-                elif 'CCN' in res['status']:
-                    ccn_list.append(res)
+        i = 0
+        for card in cards:
+            if stop_flag.get('stop'):
+                break
+            try:
+                res = check_card(card)
+            except Exception as err:
+                res = {'status':'DEAD','card':card,'message':str(err)[:50],'price':''}
+            i += 1
+            results.append(res)
+            if 'CHARGED' in res['status']:
+                charged.append(res)
+                ci = get_card_info(res['card'].split('|')[0])
+                send_safe(msg.chat.id,
+                    fmt_result(res, ci, msg.from_user.username or 'User'),
+                    parse_mode='HTML')
+            elif 'CCN' in res['status']:
+                ccn_list.append(res)
+                ci = get_card_info(res['card'].split('|')[0])
+                send_safe(msg.chat.id,
+                    fmt_result(res, ci, msg.from_user.username or 'User'),
+                    parse_mode='HTML')
 
-                if i % 5 == 0 or i == len(cards):
-                    dead_count = i - len(charged) - len(ccn_list)
-                    markup = types.InlineKeyboardMarkup(row_width=2)
-                    markup.add(
-                        types.InlineKeyboardButton(f"❌ Failed  {dead_count}", callback_data="none"),
-                        types.InlineKeyboardButton(f"✅ Success  {len(charged) + len(ccn_list)}", callback_data="none"),
-                        types.InlineKeyboardButton(f"📊 Total  {len(cards)}", callback_data="none"),
-                        types.InlineKeyboardButton(f"📋 Left  {len(cards) - i}", callback_data="none"),
-                        types.InlineKeyboardButton("🛑 Stop", callback_data=f"stop_{msg.chat.id}"),
-                    )
-                    edit_safe(msg.chat.id, status_msg.message_id,
-                        f"{e('⏳')} <b>Checking {msg.document.file_name}...</b>",
-                        parse_mode='HTML',
-                        reply_markup=markup)
+            if i % 5 == 0 or i == len(cards):
+                dead_count = i - len(charged) - len(ccn_list)
+                markup = types.InlineKeyboardMarkup(row_width=3)
+                markup.row(
+                    types.InlineKeyboardButton(f"❌ {dead_count}", callback_data="none"),
+                    types.InlineKeyboardButton(f"💎 {len(charged)}", callback_data="none"),
+                    types.InlineKeyboardButton(f"⚠️ {len(ccn_list)}", callback_data="none"),
+                )
+                markup.row(
+                    types.InlineKeyboardButton(f"📊 Total  {len(cards)}", callback_data="none"),
+                    types.InlineKeyboardButton(f"📋 Left  {len(cards) - i}", callback_data="none"),
+                )
+                markup.row(
+                    types.InlineKeyboardButton("🔴 Stop", callback_data=f"stop_{msg.chat.id}"),
+                )
+                edit_safe(msg.chat.id, status_msg.message_id,
+                    f"{e('⏳')} <b>Checking {msg.document.file_name}...</b>",
+                    parse_mode='HTML',
+                    reply_markup=markup)
 
         dead  = len(results) - len(charged) - len(ccn_list)
         label = "Stopped" if stop_flag.get('stop') else "Done"
 
-        done_markup = types.InlineKeyboardMarkup(row_width=2)
-        done_markup.add(
-            types.InlineKeyboardButton(f"❌ Failed  {dead}", callback_data="none"),
-            types.InlineKeyboardButton(f"✅ Success  {len(charged) + len(ccn_list)}", callback_data="none"),
+        done_markup = types.InlineKeyboardMarkup(row_width=3)
+        done_markup.row(
+            types.InlineKeyboardButton(f"❌ {dead}", callback_data="none"),
+            types.InlineKeyboardButton(f"💎 {len(charged)}", callback_data="none"),
+            types.InlineKeyboardButton(f"⚠️ {len(ccn_list)}", callback_data="none"),
+        )
+        done_markup.row(
             types.InlineKeyboardButton(f"📊 Total  {len(results)}", callback_data="none"),
-            types.InlineKeyboardButton(f"💎 Charged  {len(charged)}", callback_data="none"),
         )
         edit_safe(msg.chat.id, status_msg.message_id,
             f"{e('✅')} <b>{label}!</b>",
