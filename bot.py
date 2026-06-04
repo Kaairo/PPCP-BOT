@@ -167,8 +167,8 @@ bot = TelegramClient('ppcp_bot', API_ID, API_HASH)
 
 async def send(event_or_uid, text, **kw):
     try:
-        if hasattr(event_or_uid, 'reply'):
-            return await event_or_uid.reply(pe(text), parse_mode='html', **kw)
+        if hasattr(event_or_uid, 'respond'):
+            return await event_or_uid.respond(pe(text), parse_mode='html', **kw)
         else:
             return await bot.send_message(event_or_uid, pe(text), parse_mode='html', **kw)
     except:
@@ -180,6 +180,8 @@ async def edit(msg, text, **kw):
     except:
         pass
 
+
+WELCOME_IMAGE = 'yosh.jpg'
 
 @bot.on(events.NewMessage(pattern='/start'))
 async def cmd_start(event):
@@ -204,7 +206,13 @@ async def cmd_start(event):
             "📢 /broadcast — Broadcast\n"
         )
     text += "\n💡 <b>Bot By:</b> @Xyoshy"
-    await send(event, text)
+    try:
+        if os.path.exists(WELCOME_IMAGE):
+            await event.respond(pe(text), file=WELCOME_IMAGE, parse_mode='html')
+        else:
+            await send(event, text)
+    except:
+        await send(event, text)
 
 
 @bot.on(events.NewMessage(pattern='/request'))
@@ -482,7 +490,7 @@ async def cb_none(event):
 
 async def main():
     await bot.start(bot_token=BOT_TOKEN)
-    print("💳 Bot started!")
+    print("💳 PPCP Bot started!")
     await bot.run_until_disconnected()
 
 if __name__ == '__main__':
