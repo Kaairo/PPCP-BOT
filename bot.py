@@ -163,7 +163,7 @@ def fmt_result(result, card_info, username='User'):
     )
     return pe(msg)
 
-bot = TelegramClient('ppcp_bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
+bot = TelegramClient('ppcp_bot', API_ID, API_HASH)
 
 async def send(event_or_uid, text, **kw):
     try:
@@ -481,6 +481,7 @@ async def cb_none(event):
 
 
 async def main():
+    await bot.start(bot_token=BOT_TOKEN)
     print("💳 Bot started!")
     await bot.run_until_disconnected()
 
