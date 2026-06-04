@@ -13,43 +13,58 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 BOT_TOKEN = '8474746750:AAGiYxECSZ3T-V6UQUN9y0umUkUXu1kI9Pg'
 ADMIN_ID  = 6601184733
-API_URL   = 'https://ppcp.rudochk.com/check'
-MAX_FILE  = 500
+API_URL    = 'https://ppcp.rudochk.com/check'
+MAX_FILE   = 500
 
 bot = telebot.TeleBot(BOT_TOKEN, num_threads=10)
 USERS_FILE  = 'yoshppcp_users.json'
 active_jobs = {}
 
-EMOJIS = {
+PREMIUM_EMOJI_IDS = {
     "✅": "5123163417326126159",
     "❌": "5121063440311386962",
     "🔥": "5116414868357907335",
+    "⚡": "5219943216781995020",
     "💳": "5447453226498552490",
     "💠": "5870498447068502918",
     "📝": "5444860552310457690",
     "🌐": "5447602197439218445",
     "📊": "4911241630633165627",
     "📦": "5303102515301083665",
+    "📋": "5305618829265628111",
     "⏳": "5303382628773161521",
     "🚀": "5303534082204920602",
     "⚠️": "5305473345838410805",
     "💎": "5305726937887433606",
     "👋": "5134653266591744867",
     "💡": "5231264265242954153",
+    "📈": "5134457377428341766",
+    "🔌": "5305622454218024328",
+    "⭐": "5801104080646444587",
     "👑": "5303547611351902889",
-    "👤": "5445174334031166029",
-    "🏦": "5303159080020372094",
-    "💰": "5373143087065423058",
+    "🔍": "5305346287820895195",
     "💥": "5122933683820430249",
-    "🛑": "5373143087065423058",
-    "📁": "5305618829265628111",
+    "🆔": "5447311106030726740",
+    "👤": "5445174334031166029",
+    "📅": "5082628525303792441",
+    "🔄": "5454245266305604993",
+    "🏦": "5303159080020372094",
+    "💰": "5303159080020372094",
 }
 
+def pe(text: str) -> str:
+    if not text:
+        return text
+    result = text
+    for emoji, emoji_id in PREMIUM_EMOJI_IDS.items():
+        result = result.replace(
+            emoji,
+            f'<tg-emoji emoji-id="{emoji_id}">{emoji}</tg-emoji>'
+        )
+    return result
+
 def e(emoji):
-    eid = EMOJIS.get(emoji)
-    if eid:
-        return f'<tg-emoji emoji-id="{eid}">{emoji}</tg-emoji>'
-    return emoji
+    return pe(emoji)
 
 def load_users():
     if os.path.exists(USERS_FILE):
@@ -74,9 +89,7 @@ def require_approval(fn):
     def wrapper(msg):
         if not is_approved(msg.from_user.id):
             send_safe(msg.chat.id,
-                f"{e('❌')} <b>ACCESS DENIED</b>\n\n"
-                f"You need access to use this bot.\n"
-                f"Use /request to apply.",
+                pe("❌ <b>ACCESS DENIED</b>\n\nYou need access to use this bot.\nUse /request to apply."),
                 parse_mode='HTML')
             return
         return fn(msg)
@@ -161,27 +174,34 @@ def check_card(card):
 
 def fmt_result(result, card_info, username='User'):
     status = result['status']
-    price  = f" | {e('💰')} {result['price']}" if result['price'] else ''
+    
+    flag   = card_info.get('flag', '🌍')
+    bank   = card_info.get('bank', 'Unknown')
+    country= card_info.get('country', 'Unknown')
+    brand  = card_info.get('brand', 'Unknown')
+    ctype  = card_info.get('type', 'Unknown')
+    level  = card_info.get('level', 'Unknown')
+    card_n = result['card']
+    msg_n  = result['message']
 
     if 'CHARGED' in status:
-        icon  = e('💎')
-        label = 'CHARGED'
+        icon, label = '💎', 'CHARGED'
     elif 'CCN' in status:
-        icon  = e('⚠️')
-        label = 'CVV MISMATCH'
+        icon, label = '⚠️', 'CVV MISMATCH'
     else:
-        icon  = e('❌')
-        label = 'DECLINED'
+        icon, label = '❌', 'DECLINED'
 
-    return (
-        f"{icon} <b>{label}</b>\n\n"
-        f"{e('💳')} <b>Card</b> → <code>{result['card']}</code>\n"
-        f"{e('📝')} <b>Response</b> → {result['message']}{price}\n"
-        f"{e('🌐')} <b>Gateway</b> → {e('🔥')} PPCP\n"
-        f"{e('🏦')} <b>Bank</b> → {card_info.get('flag','🌍')} {card_info.get('bank','Unknown')} | {card_info.get('country','Unknown')}\n"
-        f"{e('💠')} <b>Info</b> → {card_info.get('brand','Unknown')} - {card_info.get('type','Unknown')} - {card_info.get('level','Unknown')}\n"
-        f"{e('👤')} <b>By</b> → @{username}"
-    )
+    lines = [
+        icon + ' <b>' + label + '</b>',
+        '',
+        '💳 <b>Card</b> → <code>' + card_n + '</code>',
+        '📝 <b>Response</b> → ' + msg_n,
+        '🌐 <b>Gateway</b> → 🔥 PPCP',
+        '🏦 <b>Bank</b> → ' + flag + ' ' + bank + ' | ' + country,
+        '💠 <b>Info</b> → ' + brand + ' - ' + ctype + ' - ' + level,
+        '👤 <b>By</b> → @' + username,
+    ]
+    return pe('\n'.join(lines))
 
 def stop_btn(chat_id):
     m = types.InlineKeyboardMarkup()
@@ -193,25 +213,23 @@ def cmd_start(msg):
     uid = msg.from_user.id
     if not is_approved(uid):
         send_safe(msg.chat.id,
-            f"{e('💳')} <b>PPCP CHECKER</b>\n\n"
-            f"You need access to use this bot.\n"
-            f"Use /request to apply.",
+            pe("💳 <b>PPCP CHECKER</b>\n\nYou need access to use this bot.\nUse /request to apply."),
             parse_mode='HTML')
         return
 
-    text = (
-        f"{e('💳')} <b>PPCP CHECKER</b>\n\n"
-        f"{e('💥')} /pchk — Single card check\n"
-        f"{e('📦')} /pfile — Check cards from file\n"
+    text = pe(
+        "💳 <b>PPCP CHECKER</b>\n\n"
+        "💥 /pchk — Single card check\n"
+        "📦 /pfile — Check cards from file\n"
     )
     if uid == ADMIN_ID:
-        text += (
-            f"\n{e('👑')} <b>ADMIN</b>\n\n"
-            f"{e('👤')} /users — Approved users\n"
-            f"{e('⏳')} /pending — Pending requests\n"
-            f"📢 /broadcast — Broadcast\n"
+        text += pe(
+            "\n👑 <b>ADMIN</b>\n\n"
+            "👤 /users — Approved users\n"
+            "⏳ /pending — Pending requests\n"
+            "📢 /broadcast — Broadcast\n"
         )
-    text += f"\n{e('💡')} <b>Bot By:</b> @Xyoshy"
+    text += pe("\n💡 <b>Bot By:</b> @Xyoshy")
     send_safe(msg.chat.id, text, parse_mode='HTML')
 
 
@@ -295,7 +313,7 @@ def cmd_pchk(msg):
         return
     card = parts[1].strip()
     status_msg = send_safe(msg.chat.id,
-        f"{e('⏳')} Checking...\n{e('💳')} <code>{card}</code>",
+        pe(f"⏳ Checking...\n💳 <code>{card}</code>"),
         parse_mode='HTML')
     if not status_msg:
         return
@@ -310,9 +328,7 @@ def cmd_pchk(msg):
 @require_approval
 def cmd_pfile(msg):
     send_safe(msg.chat.id,
-        f"{e('📁')} Send your .txt file\n"
-        f"One card per line: card|mm|yy|cvv\n"
-        f"Max {MAX_FILE} cards.",
+        pe(f"📁 Send your .txt file\nOne card per line: card|mm|yy|cvv\nMax {MAX_FILE} cards."),
         parse_mode='HTML')
 
 
@@ -324,7 +340,7 @@ def handle_file(msg):
         return
 
     status_msg = send_safe(msg.chat.id,
-        f"{e('⏳')} Reading file...", parse_mode='HTML')
+        pe("⏳ Reading file..."), parse_mode='HTML')
     if not status_msg:
         return
 
@@ -347,7 +363,7 @@ def handle_file(msg):
     active_jobs[msg.chat.id] = stop_flag
 
     edit_safe(msg.chat.id, status_msg.message_id,
-        f"{e('⏳')} <b>Checking {len(cards)} cards...</b>",
+        pe(f"⏳ <b>Checking {len(cards)} cards...</b>"),
         parse_mode='HTML',
         reply_markup=stop_btn(msg.chat.id))
 
@@ -412,7 +428,7 @@ def handle_file(msg):
             types.InlineKeyboardButton(f"📊 Total  {len(results)}", callback_data="none"),
         )
         edit_safe(msg.chat.id, status_msg.message_id,
-            f"{e('✅')} <b>{label}!</b>",
+            pe(f"✅ <b>{label}!</b>"),
             parse_mode='HTML',
             reply_markup=done_markup)
 
@@ -426,7 +442,7 @@ def handle_file(msg):
                     f.write(f"CHARGED\n{r['card']}\n{r['message']}{price}\n\n")
             with open(fname, 'rb') as f:
                 bot.send_document(msg.chat.id, f,
-                    caption=f"{e('💎')} <b>{len(charged)} Charged Cards</b>",
+                    caption=pe(f"💎 <b>{len(charged)} Charged Cards</b>"),
                     visible_file_name=fname,
                     parse_mode='HTML')
             os.remove(fname)
@@ -439,7 +455,7 @@ def handle_file(msg):
                     f.write(f"CCN\n{r['card']}\n{r['message']}{price}\n\n")
             with open(fname, 'rb') as f:
                 bot.send_document(msg.chat.id, f,
-                    caption=f"{e('⚠️')} <b>{len(ccn_list)} CCN Cards</b>",
+                    caption=pe(f"⚠️ <b>{len(ccn_list)} CCN Cards</b>"),
                     visible_file_name=fname,
                     parse_mode='HTML')
             os.remove(fname)
@@ -456,7 +472,7 @@ def cmd_users(msg):
     if not approved_users:
         send_safe(msg.chat.id, "📭 No approved users.")
         return
-    text = f"{e('👤')} <b>Approved Users</b>\n\n"
+    text = pe("👤 <b>Approved Users</b>\n\n")
     for i, uid in enumerate(approved_users, 1):
         text += f"{i}. <code>{uid}</code>\n"
     send_safe(msg.chat.id, text, parse_mode='HTML')
@@ -469,7 +485,7 @@ def cmd_pending(msg):
     if not pending_requests:
         send_safe(msg.chat.id, "📭 No pending requests.")
         return
-    text = f"{e('⏳')} <b>Pending Requests</b>\n\n"
+    text = pe("⏳ <b>Pending Requests</b>\n\n")
     for uid, info in pending_requests.items():
         text += f"👤 {info['name']} | @{info['username']} | <code>{uid}</code>\n"
     send_safe(msg.chat.id, text, parse_mode='HTML')
