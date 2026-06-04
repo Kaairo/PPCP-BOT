@@ -163,12 +163,12 @@ def fmt_result(result, card_info, username='User'):
     )
     return pe(msg)
 
-bot = TelegramClient('ppcp_bot', API_ID, API_HASH)
+bot = TelegramClient('ppcp_bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
 async def send(event_or_uid, text, **kw):
     try:
-        if hasattr(event_or_uid, 'respond'):
-            return await event_or_uid.respond(pe(text), parse_mode='html', **kw)
+        if hasattr(event_or_uid, 'reply'):
+            return await event_or_uid.reply(pe(text), parse_mode='html', **kw)
         else:
             return await bot.send_message(event_or_uid, pe(text), parse_mode='html', **kw)
     except:
@@ -481,7 +481,6 @@ async def cb_none(event):
 
 
 async def main():
-    await bot.start(bot_token=BOT_TOKEN)
     print("💳 Bot started!")
     await bot.run_until_disconnected()
 
